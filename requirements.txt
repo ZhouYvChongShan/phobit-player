@@ -1,0 +1,4 @@
+PyQt5==5.15.10
+pygame==2.5.2
+mutagen==1.47.0
+pyinstaller==6.3.0
