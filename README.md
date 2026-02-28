@@ -1,18 +1,5 @@
 
 
-**本地音乐播放器**
-
-
-https://img.shields.io/github/v/release/ZhouYvChongShan/phobit-player?include_prereleases&style=flat-square)](https://github.com/ZhouYvChongShan/phobit-player/releases)
-
-
-
-
-
-
-
-
-
 
 
 
