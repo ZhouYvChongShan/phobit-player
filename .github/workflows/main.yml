@@ -1,0 +1,276 @@
+name: Build Phobit Player EXE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号'
+        required: false
+        default: '1.0.0'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Display Python version
+      run: python --version
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel setuptools
+        pip install pyinstaller PyQt5 pygame mutagen opencv-python numpy
+        pip list
+    
+    - name: Create version file
+      run: |
+        $version = if ("${{ github.event.inputs.version }}") { "${{ github.event.inputs.version }}" } else { "1.0.${{ github.run_number }}" }
+        echo "VERSION=$version" >> $env:GITHUB_ENV
+        echo "Build version: $version"
+    
+    - name: Prepare build directory
+      run: |
+        New-Item -ItemType Directory -Force -Path build_dist
+        Write-Host "Build directory prepared"
+    
+    - name: Check for required files
+      run: |
+        $required_files = @("glassflow_player.py", "lyrics_parser.py", "XIANGCUIJIXUESONG Regular.ttf")
+        $missing_files = @()
+        
+        foreach ($file in $required_files) {
+          if (-not (Test-Path $file)) {
+            $missing_files += $file
+          }
+        }
+        
+        if ($missing_files.Count -gt 0) {
+          Write-Host "Warning: Missing files: $missing_files"
+          Write-Host "Continuing build without these files..."
+        } else {
+          Write-Host "All required files found"
+        }
+    
+    - name: Build with PyInstaller
+      run: |
+        $pyinstaller_args = @(
+          "--noconsole",
+          "--onefile",
+          "--name", "phobit-player",
+          "--icon", "icon.ico",
+          "--add-data", "lyrics_parser.py;.",
+          "--add-data", "XIANGCUIJIXUESONG Regular.ttf;.",
+          "--distpath", "build_dist",
+          "--workpath", "build_temp",
+          "--specpath", "build_spec",
+          "--clean",
+          "--uac-admin",
+          "--version-file", "version_info.txt"
+        )
+        
+        # 创建版本信息文件
+        $version_info = @"
+# UTF-8
+#
+# For more details about fixed file info 'ffi' see:
+# https://pyinstaller.org/en/stable/usage.html#platform-specific-options
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($env:VERSION -replace '\.', ',').Split(','),
+    prodvers=($env:VERSION -replace '\.', ',').Split(','),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+    ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'ZhouYvChongShan'),
+        StringStruct(u'FileDescription', u'phobit-player - iOS风格毛玻璃音乐播放器'),
+        StringStruct(u'FileVersion', u'$env:VERSION'),
+        StringStruct(u'InternalName', u'phobit-player'),
+        StringStruct(u'LegalCopyright', u'Copyright (c) ZhouYvChongShan'),
+        StringStruct(u'OriginalFilename', u'phobit-player.exe'),
+        StringStruct(u'ProductName', u'phobit-player'),
+        StringStruct(u'ProductVersion', u'$env:VERSION')])
+      ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+"@
+        $version_info | Out-File -FilePath version_info.txt -Encoding UTF8
+        
+        # 检查图标文件是否存在
+        if (Test-Path "icon.ico") {
+          Write-Host "Icon file found, using custom icon"
+        } else {
+          Write-Host "Icon file not found, building without icon"
+          $pyinstaller_args = $pyinstaller_args | Where-Object { $_ -ne "--icon" -and $_ -ne "icon.ico" }
+        }
+        
+        # 执行PyInstaller
+        pyinstaller $pyinstaller_args glassflow_player.py
+        
+        if ($LASTEXITCODE -ne 0) {
+          throw "PyInstaller build failed with exit code $LASTEXITCODE"
+        }
+    
+    - name: List build directory
+      run: |
+        Write-Host "Build directory contents:"
+        Get-ChildItem -Path build_dist -Recurse
+        Write-Host "`nTemp directory contents:"
+        Get-ChildItem -Path build_temp -Recurse -ErrorAction SilentlyContinue
+    
+    - name: Create release package
+跑: |
+        $release_dir = "phobit-player-$env:VERSION"
+        New-Item -ItemType Directory -Force -Path $release_dir
+        
+        # 复制可执行文件
+        if (Test-Path "build_dist/phobit-player.exe") {
+          Copy-Item -Path "build_dist/phobit-player.exe" -Destination "$release_dir/"
+} 否则 {
+          Write-Host "Error: phobit-player.exe not found!"
+出口1
+        }
+        
+        # 复制说明文件
+        @"
+phobit-player v$env:VERSION
+===========================
+
+一个具有iOS风格毛玻璃效果的本地音乐播放器
+
+开发者: ZhouYvChongShan
+
+功能特点：
+- 支持多种音频格式 (MP3, FLAC, WAV, M4A)
+- 歌词显示与同步
+- 歌单管理
+- 播放模式切换 (顺序/单曲循环/随机)
+- 快捷键支持:
+
+
+
+
+
+系统要求:
+- Windows 10/11
+- 无需额外安装运行时
+
+如何使用:
+直接运行 phobit-player.exe 即可
+
+注意: 请确保字体文件 “香翠吉雪松Regular.ttf” 
+与可执行文件在同一目录下，以获得最佳歌词显示效果。
+"@ |文件外 -路径”$release README.txt“ -编码 UTF8
+        
+        # 创建版本信息文件
+        @"
+版本: $env:版本
+构建日期: $（Get-Date -Format'yyyy-mm-dd HH：mm：ss')
+
+"@ |文件外 -路径”$release 导演/version.txt“ -编码 UTF8
+        
+        # 打包发布文件
+
+        
+
+    
+
+
+
+
+路径: build_dist/phobit-player.exe
+如果-未找到文件-: 错误
+    
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
